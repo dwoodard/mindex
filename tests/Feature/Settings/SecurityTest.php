@@ -18,7 +18,7 @@ test('security page is displayed', function (): void {
     $this->actingAs($user)
         ->withSession(['auth.password_confirmed_at' => time()])
         ->get(route('security.edit'))
-        ->assertInertia(fn (Assert $page) => $page
+        ->assertInertia(fn (Assert $page): \Inertia\Testing\AssertableInertia => $page
             ->component('settings/Security')
             ->where('canManageTwoFactor', true)
             ->where('twoFactorEnabled', false),
@@ -54,7 +54,7 @@ test('security page does not require password confirmation when disabled', funct
     $this->actingAs($user)
         ->get(route('security.edit'))
         ->assertOk()
-        ->assertInertia(fn (Assert $page) => $page
+        ->assertInertia(fn (Assert $page): \Inertia\Testing\AssertableInertia => $page
             ->component('settings/Security'),
         );
 });
@@ -69,7 +69,7 @@ test('security page renders without two factor when feature is disabled', functi
     $this->actingAs($user)
         ->get(route('security.edit'))
         ->assertOk()
-        ->assertInertia(fn (Assert $page) => $page
+        ->assertInertia(fn (Assert $page): \Inertia\Testing\AssertableInertia => $page
             ->component('settings/Security')
             ->where('canManageTwoFactor', false)
             ->missing('twoFactorEnabled')

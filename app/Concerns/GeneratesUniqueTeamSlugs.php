@@ -36,7 +36,7 @@ trait GeneratesUniqueTeamSlugs
 
                 return null;
             })
-            ->filter(fn (?int $suffix) => $suffix !== null)
+            ->filter(fn (?int $suffix): bool => $suffix !== null)
             ->max() ?? 0;
 
         return $existingSlugs->isEmpty()
