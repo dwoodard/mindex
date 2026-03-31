@@ -11,11 +11,11 @@ Route::inertia('/', 'Welcome', [
 
 Route::prefix('{current_team}')
     ->middleware(['auth', 'verified', EnsureTeamMembership::class])
-    ->group(function () {
+    ->group(function (): void {
         Route::inertia('dashboard', 'Dashboard')->name('dashboard');
     });
 
-Route::middleware(['auth'])->group(function () {
+Route::middleware(['auth'])->group(function (): void {
     Route::get('invitations/{invitation}/accept', [TeamInvitationController::class, 'accept'])->name('invitations.accept');
 });
 

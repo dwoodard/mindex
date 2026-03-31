@@ -57,7 +57,7 @@ class TeamInvitationController extends Controller
     {
         $user = $request->user();
 
-        DB::transaction(function () use ($user, $invitation) {
+        DB::transaction(function () use ($user, $invitation): void {
             $team = $invitation->team;
 
             $membership = $team->memberships()->firstOrCreate(

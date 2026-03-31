@@ -117,7 +117,7 @@ class TeamController extends Controller
             ? $user->fallbackTeam($team)
             : null;
 
-        DB::transaction(function () use ($user, $team) {
+        DB::transaction(function () use ($user, $team): void {
             User::where('current_team_id', $team->id)
                 ->where('id', '!=', $user->id)
                 ->each(fn (User $affectedUser) => $affectedUser->switchTeam($affectedUser->personalTeam()));

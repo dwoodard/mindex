@@ -25,13 +25,13 @@ class Team extends Model
     {
         parent::boot();
 
-        static::creating(function (Team $team) {
+        static::creating(function (Team $team): void {
             if (empty($team->slug)) {
                 $team->slug = static::generateUniqueTeamSlug($team->name);
             }
         });
 
-        static::updating(function (Team $team) {
+        static::updating(function (Team $team): void {
             if ($team->isDirty('name')) {
                 $team->slug = static::generateUniqueTeamSlug($team->name, $team->id);
             }

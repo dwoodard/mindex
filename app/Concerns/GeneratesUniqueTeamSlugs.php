@@ -15,7 +15,7 @@ trait GeneratesUniqueTeamSlugs
         $defaultSlug = Str::slug($name);
 
         $query = static::withTrashed()
-            ->where(function ($query) use ($defaultSlug) {
+            ->where(function ($query) use ($defaultSlug): void {
                 $query->where('slug', $defaultSlug)
                     ->orWhere('slug', 'like', $defaultSlug.'-%');
             });

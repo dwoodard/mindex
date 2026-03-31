@@ -37,7 +37,7 @@ class UniqueTeamInvitation implements ValidationRule
         $hasPendingInvitation = TeamInvitation::where('team_id', $this->team->id)
             ->whereRaw('LOWER(email) = ?', [$email])
             ->whereNull('accepted_at')
-            ->where(function ($query) {
+            ->where(function ($query): void {
                 $query->whereNull('expires_at')
                     ->orWhere('expires_at', '>', now());
             })
