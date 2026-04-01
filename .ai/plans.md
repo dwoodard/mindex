@@ -45,65 +45,56 @@ Paste into Cursor, Claude Code, or hand to a developer as the source of truth.
 
 ---
 
-## 🔨 In Progress
+## ✅ Also Done (this session)
 
-Being built right now by parallel agents:
-
-1. **`ProcessCaptureJob`** (`app/Jobs/ProcessCaptureJob.php`)
-   Wires the full pipeline together. Steps in order:
-   - Normalise input to UTF-8 string
-   - Retrieve related nodes from graph (via `GraphServiceInterface`)
-   - Build extraction prompt with retrieved context
-   - Call `ExtractionService` → get `WritePayload`
-   - Call `IntentValidatorService` → get `ValidatedPayload`
-   - Broadcast `PipelineStatusEvent` at each stage
-   - Write nodes/edges via `GraphServiceInterface`
-   - Broadcast `GraphUpdatedEvent` with counts
-   - If contradictions → broadcast `ConflictDetectedEvent`
-   - Return reply (empty in listen mode)
-   Uses `#[Tries(3)]` `#[Backoff(60)]` Laravel 13 job attributes.
-
-2. **`CaptureController`** (`app/Http/Controllers/CaptureController.php`) + **`TextCaptureRequest`** + **`AudioCaptureRequest`** + routes
-   POST `/api/capture/text` and `/api/capture/audio`. Dispatches `ProcessCaptureJob`.
-   Returns `session_id` so the frontend can subscribe to the correct Reverb channel.
-
-3. **`TranscribeAudioJob`** (`app/Jobs/TranscribeAudioJob.php`)
-   Receives audio file path, calls OpenAI Whisper API. On success dispatches
-   `ProcessCaptureJob` with the transcript. On failure broadcasts `PipelineStatusEvent`
-   with `'failed'` status.
-
-4. **`config/mindex.php`** + **`AppServiceProvider`** service binding
-   Config file for Neo4j connection settings, Whisper settings, and decay defaults.
-   Register in `AppServiceProvider` binding `GraphServiceInterface` to `GraphServiceStub`
-   (swap to real `GraphService` once Neo4j is proven stable).
-
-5. **`GraphService`** (real Neo4j) (`app/Services/GraphService.php`)
-   Swap `GraphServiceStub` for full `laudis/neo4j-php-client` implementation.
-   Same `GraphServiceInterface`, different backend — no pipeline changes needed.
+- [x] `app/Jobs/ProcessCaptureJob.php` — full pipeline, `#[Tries(3)]`, `WithoutOverlapping`
+- [x] `app/Http/Controllers/CaptureController.php` + `TextCaptureRequest` + `AudioCaptureRequest` + API routes
+- [x] `app/Jobs/TranscribeAudioJob.php` — Whisper API, dispatches `ProcessCaptureJob` on success
+- [x] `config/mindex.php` + `AppServiceProvider` binding (`GraphServiceInterface` → `GraphServiceStub`)
+- [x] `app/Services/GraphService.php` — full Neo4j implementation, APOC fallback
+- [x] `resources/js/Pages/Capture.vue` — mode toggle, text input, hold-to-record mic, Reverb pipeline status bar + graph update toast
+- [x] `/{current_team}/capture` web route + "Capture" sidebar nav item (Mic icon)
+- [x] `routes/channels.php` — private channel auth for `capture.*` and `graph.*`
+- [x] `app/Jobs/DecayConfidenceJob.php` — nightly 2am, floors at 0.05, flags `faded` when confidence < 0.2
+- [x] `app/DTOs/GraphNode.php` — added `faded: bool` field
+- [x] Both `GraphService` and `GraphServiceStub` updated: min floor 0.05, faded flagging, hydration
 
 ---
 
-## 🔜 Up Next
+## ✅ MVP — Complete
 
-After the current batch lands, build in this order — each step unblocks the next:
+All four steps done. Pipeline is end-to-end: Capture page → POST → job dispatched → LM Studio extracts nodes → Neo4j written → Reverb events broadcast.
 
-1. **`Capture.vue`** (`resources/js/Pages/Capture.vue`)
-   Main PWA screen. Hold-to-record audio button, text input, mode toggle (Listen/Interact).
-   Wire Reverb listeners from day one for pipeline status and graph updates — do not ship
-   this screen without real-time feedback already connected.
+- [x] **Neo4j client registered** — `AppServiceProvider` binds `ClientInterface` singleton via `ClientBuilder`. `GraphServiceInterface` → `GraphService` (swapped from stub).
+- [x] **AI provider wired** — `config/ai.php` published. LM Studio at `http://127.0.0.1:1234/v1` configured as `lmstudio` provider using `openai` driver. `ExtractionAgent` targets `openai/gpt-oss-20b`.
+- [x] **Queue worker** — `php artisan queue:work` running against MySQL `jobs` table.
+- [x] **Smoke test passed** — POST `/api/capture/text` returns 202, Reverb channel auth returns 200, nodes appear in Neo4j.
 
-2. **PWA config**
-   `manifest.json`, service worker (cache-first static, network-first API), offline capture
-   queue using IndexedDB + Background Sync. Do not build until the core pipeline is stable.
+### Bugs fixed during smoke test
 
-3. **Auth hardening**
-   All Reverb channels are private and require authenticated sessions.
-   Sanctum API tokens for mobile clients. Add this before any deployment.
+- **Auth guard** — Capture routes moved from `routes/api.php` (stateless) to `routes/web.php` (`auth` middleware, session-aware). Fixes 401.
+- **Extraction prompt shape** — LM Studio model returned a flat array instead of `{nodes,edges,intents,...}`. Added explicit `OUTPUT FORMAT` JSON example to system prompt.
+- **Search direction** — `search()` checked `n.label CONTAINS $query` (never matches long input). Flipped to `$query CONTAINS n.label` in both `GraphService` and `GraphServiceStub`.
+- **`created_at`/`updated_at` hydration** — `hydrateNode` threw `OutOfBoundsException` on nodes missing these props. Added `hasKey` guards with `Carbon::now()` fallback.
+- **MERGE relationship type** — Neo4j requires a type on `MERGE` for relationships. `$draft->type->value` (enum-safe) is now embedded directly in the Cypher string.
 
-4. **`DecayConfidenceJob`** (`app/Jobs/DecayConfidenceJob.php`)
-   Nightly cron at 2am via Laravel Scheduler. For every non-anchored node not reinforced
-   in 7 days: `confidence -= decay_rate`, minimum `0.05`. Nodes below `0.2` flagged as
-   `'faded'` and excluded from retrieval context by default.
+---
+
+## 🔜 Post-MVP (in priority order)
+
+1. **Interact mode reply** — `ProcessCaptureJob` returns a reply string that never reaches
+   the frontend. Add `ReplyEvent` broadcasting on `capture.{sessionId}` and wire
+   `Capture.vue` to show it when `listenMode = false`. This completes the second mode.
+
+2. **`search()` faded-node exclusion** — Both services return faded nodes in context.
+   Add `WHERE n.faded = false OR n.faded IS NULL` to Cypher and filter in the stub.
+   Completes the `DecayConfidenceJob` spec.
+
+3. **PWA config** — `manifest.json`, service worker, offline IndexedDB queue.
+   Build after smoke test confirms the pipeline is stable.
+
+4. **Auth hardening** — Sanctum personal access token endpoint for mobile/PWA clients
+   that can't use session cookies. Not needed until deploying beyond localhost.
 
 ---
 

@@ -22,5 +22,6 @@ readonly class GraphNode
         public float $decay_rate,
         public bool $anchored,
         public ?Carbon $last_reinforced_at = null,
+        public bool $faded = false,
     ) {}
 }

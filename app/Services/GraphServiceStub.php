@@ -58,7 +58,7 @@ class GraphServiceStub implements GraphServiceInterface
                 break;
             }
 
-            $labelMatch = str_contains(mb_strtolower($raw['label']), $lower);
+            $labelMatch = str_contains($lower, mb_strtolower($raw['label']));
 
             $propertiesMatch = false;
             foreach ($raw['properties'] ?? [] as $value) {
@@ -218,7 +218,8 @@ class GraphServiceStub implements GraphServiceInterface
             $shouldDecay = $lastReinforced === null || $lastReinforced->isBefore($notReinforcedSince);
 
             if ($shouldDecay) {
-                $raw['confidence'] = max(0.0, $raw['confidence'] - $rate);
+                $raw['confidence'] = max(0.05, $raw['confidence'] - $rate);
+                $raw['faded'] = $raw['confidence'] < 0.2;
                 $raw['updated_at'] = Carbon::now()->toIso8601String();
                 $updated++;
             }
@@ -270,6 +271,7 @@ class GraphServiceStub implements GraphServiceInterface
             last_reinforced_at: isset($raw['last_reinforced_at'])
                 ? Carbon::parse($raw['last_reinforced_at'])
                 : null,
+            faded: (bool) ($raw['faded'] ?? false),
         );
     }
 

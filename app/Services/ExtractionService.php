@@ -12,6 +12,8 @@ use App\Enums\RelationType;
 use App\Enums\WriteIntent;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
 use Illuminate\JsonSchema\Types\Type;
+use Laravel\Ai\Attributes\Model;
+use Laravel\Ai\Attributes\Provider;
 use Laravel\Ai\Contracts\Agent;
 use Laravel\Ai\Contracts\Conversational;
 use Laravel\Ai\Contracts\HasStructuredOutput;
@@ -114,6 +116,8 @@ class ExtractionService
  * Kept package-private (file-scoped) to the ExtractionService — callers
  * should go through ExtractionService::extract(), not this class directly.
  */
+#[Provider('lmstudio')]
+#[Model('openai/gpt-oss-20b')]
 class ExtractionAgent implements Agent, Conversational, HasStructuredOutput
 {
     use Promptable;
@@ -152,6 +156,23 @@ RULES:
 8. If you detect a contradiction, set intent to CONTRADICT and explain in the reason field.
 9. Confidence: 0.3 for passing mention, 0.8+ for strong clear statement.
 10. Properties are freeform but keep them brief — 1 to 3 key facts only.
+
+OUTPUT FORMAT:
+You MUST respond with a single JSON object matching this exact shape. No other text.
+{
+  "nodes": [
+    {"id": "snake_case_id", "label": "Human readable label", "type": "Idea", "origin": "user", "confidence": 0.8, "decay_rate": 0.02, "anchored": false, "properties": {}}
+  ],
+  "edges": [
+    {"source_id": "node_a", "target_id": "node_b", "type": "RELATES_TO", "origin": "inferred", "strength": 0.7, "reason": "optional explanation"}
+  ],
+  "intents": [
+    {"node_id": "snake_case_id", "intent": "CREATE", "replaces_id": null, "reason": null}
+  ],
+  "reply": "",
+  "mood": null,
+  "open_questions": null
+}
 
 EXISTING GRAPH CONTEXT:
 {$this->retrievedNodesJson}

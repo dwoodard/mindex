@@ -69,7 +69,7 @@ class GraphService implements GraphServiceInterface
     public function search(string $query, int $limit = 10): array
     {
         $result = $this->client->run(
-            'MATCH (n) WHERE toLower(n.label) CONTAINS toLower($query) RETURN n LIMIT $limit',
+            'MATCH (n) WHERE toLower($query) CONTAINS toLower(n.label) RETURN n LIMIT $limit',
             ['query' => $query, 'limit' => $limit],
         );
 
@@ -166,11 +166,14 @@ class GraphService implements GraphServiceInterface
             'reason' => $draft->reason,
         ];
 
-        $cypher = <<<'CYPHER'
-        MATCH (a {id: $source_id}), (b {id: $target_id})
-        MERGE (a)-[r {id: $edge_id}]->(b)
-        ON CREATE SET r += $props, r.created_at = $now, r.session_id = $session_id
-        ON MATCH SET r.strength = $strength, r.session_id = $session_id, r.updated_at = $now
+        // Relationship type must be embedded — Cypher does not support dynamic types as parameters.
+        // Safe because $draft->type is a validated enum value.
+        $relType = $draft->type->value;
+        $cypher = <<<CYPHER
+        MATCH (a {id: \$source_id}), (b {id: \$target_id})
+        MERGE (a)-[r:{$relType} {id: \$edge_id}]->(b)
+        ON CREATE SET r += \$props, r.created_at = \$now, r.session_id = \$session_id
+        ON MATCH SET r.strength = \$strength, r.session_id = \$session_id, r.updated_at = \$now
         RETURN r
         CYPHER;
 
@@ -274,10 +277,12 @@ class GraphService implements GraphServiceInterface
             MATCH (n)
             WHERE n.anchored = false
               AND (n.last_reinforced_at IS NULL OR n.last_reinforced_at < $threshold)
-            SET n.confidence = CASE
-                    WHEN n.confidence - $rate < 0 THEN 0.0
+            WITH n, CASE
+                    WHEN n.confidence - $rate < 0.05 THEN 0.05
                     ELSE n.confidence - $rate
-                END,
+                END AS newConf
+            SET n.confidence = newConf,
+                n.faded = newConf < 0.2,
                 n.updated_at = $now
             RETURN count(n) AS updated
             CYPHER,
@@ -310,13 +315,18 @@ class GraphService implements GraphServiceInterface
             type: NodeType::from((string) $props->get('type')),
             origin: Origin::from((string) $props->get('origin')),
             confidence: (float) $props->get('confidence'),
-            created_at: Carbon::parse((string) $props->get('created_at')),
-            updated_at: Carbon::parse((string) $props->get('updated_at')),
+            created_at: $props->hasKey('created_at') && $props->get('created_at') !== null
+                ? Carbon::parse((string) $props->get('created_at'))
+                : Carbon::now(),
+            updated_at: $props->hasKey('updated_at') && $props->get('updated_at') !== null
+                ? Carbon::parse((string) $props->get('updated_at'))
+                : Carbon::now(),
             mention_count: (int) ($props->hasKey('mention_count') ? $props->get('mention_count') : 0),
             properties: $properties,
             decay_rate: (float) ($props->hasKey('decay_rate') ? $props->get('decay_rate') : 0.02),
             anchored: (bool) ($props->hasKey('anchored') ? $props->get('anchored') : false),
             last_reinforced_at: $lastReinforcedAt,
+            faded: (bool) ($props->hasKey('faded') ? $props->get('faded') : false),
         );
     }
 

@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\CaptureController;
 use App\Http\Controllers\Teams\TeamInvitationController;
 use App\Http\Middleware\EnsureTeamMembership;
 use Illuminate\Support\Facades\Route;
@@ -18,6 +19,8 @@ Route::prefix('{current_team}')
 
 Route::middleware(['auth'])->group(function (): void {
     Route::get('invitations/{invitation}/accept', [TeamInvitationController::class, 'accept'])->name('invitations.accept');
+    Route::post('api/capture/text', [CaptureController::class, 'text'])->name('capture.text');
+    Route::post('api/capture/audio', [CaptureController::class, 'audio'])->name('capture.audio');
 });
 
 require __DIR__.'/settings.php';

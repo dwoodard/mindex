@@ -15,7 +15,7 @@ return [
 
     'decay' => [
         'rate' => env('GRAPH_DECAY_RATE', 0.02),
-        'not_reinforced_days' => env('GRAPH_DECAY_NOT_REINFORCED_DAYS', 30),
+        'not_reinforced_days' => env('GRAPH_DECAY_NOT_REINFORCED_DAYS', 7),
     ],
 
     'extraction' => [
