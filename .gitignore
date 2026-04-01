@@ -1,3 +1,5 @@
+/docker/neo4j/data
+/docker/neo4j/logs
 /.phpunit.cache
 /bootstrap/ssr
 /node_modules
@@ -26,3 +28,5 @@ yarn-error.log
 /.nova
 /.vscode
 /.zed
+/data
+
