@@ -31,38 +31,23 @@ Paste into Cursor, Claude Code, or hand to a developer as the source of truth.
 - [x] `app/DTOs/GraphEdgeDraft.php` — AI output edge before validation (readonly)
 - [x] `app/DTOs/IntentDeclaration.php` — per-node intent declaration from AI (readonly)
 - [x] `app/DTOs/WritePayload.php` — full AI response envelope (readonly)
+- [x] `app/DTOs/ValidatedPayload.php` — output of the validator, passed to the write step
+
+### Services & Events
+
+- [x] `app/Services/Contracts/GraphServiceInterface.php` — contract for graph reads/writes
+- [x] `app/Services/GraphServiceStub.php` — JSON file store implementation for early development
+- [x] `app/Services/ExtractionService.php` — `laravel/ai` structured output call, returns `WritePayload`
+- [x] `app/Services/IntentValidatorService.php` — validates/overrides AI intent against existing graph state
+- [x] `app/Events/PipelineStatusEvent.php` — broadcasts transcribing | extracting | done status
+- [x] `app/Events/GraphUpdatedEvent.php` — broadcasts nodes/edges added this turn
+- [x] `app/Events/ConflictDetectedEvent.php` — broadcasts when CONTRADICT intent is detected
 
 ---
 
 ## 🔨 In Progress
 
 Being built right now by parallel agents:
-
-1. **`GraphServiceInterface`** (`app/Services/Contracts/GraphServiceInterface.php`)
-   Define the contract first so the stub and real implementation are interchangeable.
-
-2. **`GraphServiceStub`** (`app/Services/GraphServiceStub.php`)
-   JSON file store implementation — lets the full pipeline be built and tested before Neo4j is wired up.
-
-3. **`ExtractionService`** (`app/Services/ExtractionService.php`)
-   The `laravel/ai` structured output call. Returns a `WritePayload`. Includes the system prompt with enum vocabularies and retrieved graph context.
-   > ⚠️ Verify whether `laravel/ai` supports schema-enforced structured output before building. If not, fall back to `prism-php/prism`.
-
-4. **`IntentValidatorService`** (`app/Services/IntentValidatorService.php`)
-   Laravel's last line of defence. Validates/overrides AI intent against existing graph state before any write.
-   Also creates: **`ValidatedPayload` DTO** (`app/DTOs/ValidatedPayload.php`) — output of the validator, passed to the write step.
-
-5. **Reverb Events** (`app/Events/`)
-   - `PipelineStatusEvent` — transcribing | extracting | done
-   - `GraphUpdatedEvent` — nodes/edges added this turn
-   - `ConflictDetectedEvent` — CONTRADICT intent detected
-   Build these before any frontend work so the UI is wired for real-time from day one.
-
----
-
-## 🔜 Up Next
-
-After the current batch lands, build in this order — each step unblocks the next:
 
 1. **`ProcessCaptureJob`** (`app/Jobs/ProcessCaptureJob.php`)
    Wires the full pipeline together. Steps in order:
@@ -78,7 +63,7 @@ After the current batch lands, build in this order — each step unblocks the ne
    - Return reply (empty in listen mode)
    Uses `#[Tries(3)]` `#[Backoff(60)]` Laravel 13 job attributes.
 
-2. **`CaptureController`** (`app/Http/Controllers/CaptureController.php`)
+2. **`CaptureController`** (`app/Http/Controllers/CaptureController.php`) + **`TextCaptureRequest`** + **`AudioCaptureRequest`** + routes
    POST `/api/capture/text` and `/api/capture/audio`. Dispatches `ProcessCaptureJob`.
    Returns `session_id` so the frontend can subscribe to the correct Reverb channel.
 
@@ -87,29 +72,35 @@ After the current batch lands, build in this order — each step unblocks the ne
    `ProcessCaptureJob` with the transcript. On failure broadcasts `PipelineStatusEvent`
    with `'failed'` status.
 
-4. **`Capture.vue`** (`resources/js/Pages/Capture.vue`)
-   Main PWA screen. Hold-to-record audio button, text input, mode toggle (Listen/Interact).
-   Wire Reverb listeners from day one for pipeline status and graph updates — do not ship
-   this screen without real-time feedback already connected.
+4. **`config/mindex.php`** + **`AppServiceProvider`** service binding
+   Config file for Neo4j connection settings, Whisper settings, and decay defaults.
+   Register in `AppServiceProvider` binding `GraphServiceInterface` to `GraphServiceStub`
+   (swap to real `GraphService` once Neo4j is proven stable).
 
 5. **`GraphService`** (real Neo4j) (`app/Services/GraphService.php`)
    Swap `GraphServiceStub` for full `laudis/neo4j-php-client` implementation.
    Same `GraphServiceInterface`, different backend — no pipeline changes needed.
 
-6. **`config/graphmind.php`**
-   Config file for Neo4j connection settings, Whisper settings, and decay defaults.
-   Register in `AppServiceProvider` binding `GraphServiceInterface` to `GraphServiceStub`
-   (swap to real `GraphService` once Neo4j is proven stable).
+---
 
-7. **PWA config**
+## 🔜 Up Next
+
+After the current batch lands, build in this order — each step unblocks the next:
+
+1. **`Capture.vue`** (`resources/js/Pages/Capture.vue`)
+   Main PWA screen. Hold-to-record audio button, text input, mode toggle (Listen/Interact).
+   Wire Reverb listeners from day one for pipeline status and graph updates — do not ship
+   this screen without real-time feedback already connected.
+
+2. **PWA config**
    `manifest.json`, service worker (cache-first static, network-first API), offline capture
    queue using IndexedDB + Background Sync. Do not build until the core pipeline is stable.
 
-8. **Auth hardening**
+3. **Auth hardening**
    All Reverb channels are private and require authenticated sessions.
    Sanctum API tokens for mobile clients. Add this before any deployment.
 
-9. **`DecayConfidenceJob`** (`app/Jobs/DecayConfidenceJob.php`)
+4. **`DecayConfidenceJob`** (`app/Jobs/DecayConfidenceJob.php`)
    Nightly cron at 2am via Laravel Scheduler. For every non-anchored node not reinforced
    in 7 days: `confidence -= decay_rate`, minimum `0.05`. Nodes below `0.2` flagged as
    `'faded'` and excluded from retrieval context by default.
@@ -217,7 +208,7 @@ mindex/
 │   ├── web.php
 │   └── api.php
 └── config/
-    └── graphmind.php                ← neo4j, whisper, decay settings
+    └── Mindex.php                ← neo4j, whisper, decay settings
 ```
 
 ---
@@ -426,8 +417,8 @@ The app must be installable on iOS and Android as a PWA.
 
 ```json
 {
-  "name": "GraphMind",
-  "short_name": "GraphMind",
+  "name": "Mindex",
+  "short_name": "Mindex",
   "description": "Your thinking, remembered.",
   "start_url": "/",
   "display": "standalone",
@@ -797,7 +788,7 @@ COMPOSE_PROJECT_NAME=mindex
 ### Create the Laravel App
 
 ```bash
-# From the graphmind/ root (not inside laradock/)
+# From the Mindex/ root (not inside laradock/)
 # Laravel 13 requires PHP 8.3 — confirm Laradock PHP_VERSION=8.3 in laradock/.env first
 
 # Option A — Laravel installer (recommended, creates Laravel 13 by default as of March 2026)
@@ -867,7 +858,7 @@ OPENAI_API_KEY=
 # Queue
 QUEUE_CONNECTION=redis
 
-APP_NAME=GraphMind
+APP_NAME=Mindex
 APP_URL=http://localhost
 ```
 

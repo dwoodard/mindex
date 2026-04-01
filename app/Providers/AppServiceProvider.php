@@ -2,6 +2,8 @@
 
 namespace App\Providers;
 
+use App\Services\Contracts\GraphServiceInterface;
+use App\Services\GraphServiceStub;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\Date;
 use Illuminate\Support\Facades\DB;
@@ -15,7 +17,10 @@ class AppServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
-        //
+        $this->app->bind(
+            GraphServiceInterface::class,
+            GraphServiceStub::class,
+        );
     }
 
     /**
