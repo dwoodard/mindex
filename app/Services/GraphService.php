@@ -8,7 +8,6 @@ use App\DTOs\GraphNode;
 use App\DTOs\GraphNodeDraft;
 use App\Enums\NodeType;
 use App\Enums\Origin;
-use App\Enums\RelationType;
 use App\Services\Contracts\GraphServiceInterface;
 use Carbon\Carbon;
 use Laudis\Neo4j\Contracts\ClientInterface;
@@ -26,6 +25,23 @@ class GraphService implements GraphServiceInterface
         $result = $this->client->run(
             'MATCH (n {id: $id}) RETURN n LIMIT 1',
             ['id' => $id],
+        );
+
+        if ($result->isEmpty()) {
+            return null;
+        }
+
+        /** @var Node $node */
+        $node = $result->first()->get('n');
+
+        return $this->hydrateNode($node);
+    }
+
+    public function findByLabel(string $label): ?GraphNode
+    {
+        $result = $this->client->run(
+            'MATCH (n) WHERE toLower(trim(n.label)) = toLower(trim($label)) RETURN n LIMIT 1',
+            ['label' => $label],
         );
 
         if ($result->isEmpty()) {
@@ -154,21 +170,20 @@ class GraphService implements GraphServiceInterface
     public function mergeEdge(GraphEdgeDraft $draft, string $sessionId): GraphEdge
     {
         $now = Carbon::now()->toIso8601String();
-        $edgeId = "{$draft->source_id}__{$draft->type->value}__{$draft->target_id}";
+
+        // Sanitize: Cypher relationship types must be [A-Z_] and cannot be parameterised.
+        $relType = preg_replace('/[^A-Z_]/', '_', strtoupper(trim($draft->type)));
+        $edgeId = "{$draft->source_id}__{$relType}__{$draft->target_id}";
 
         $props = [
             'id' => $edgeId,
             'source_id' => $draft->source_id,
             'target_id' => $draft->target_id,
-            'type' => $draft->type->value,
+            'type' => $relType,
             'origin' => $draft->origin->value,
             'strength' => $draft->strength,
             'reason' => $draft->reason,
         ];
-
-        // Relationship type must be embedded — Cypher does not support dynamic types as parameters.
-        // Safe because $draft->type is a validated enum value.
-        $relType = $draft->type->value;
         $cypher = <<<CYPHER
         MATCH (a {id: \$source_id}), (b {id: \$target_id})
         MERGE (a)-[r:{$relType} {id: \$edge_id}]->(b)
@@ -346,7 +361,7 @@ class GraphService implements GraphServiceInterface
             id: $edgeId,
             source_id: (string) $props->get('source_id'),
             target_id: (string) $props->get('target_id'),
-            type: RelationType::from((string) $props->get('type')),
+            type: (string) $props->get('type'),
             origin: Origin::from((string) $props->get('origin')),
             strength: (float) $props->get('strength'),
             created_at: Carbon::parse((string) $props->get('created_at')),

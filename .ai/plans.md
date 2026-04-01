@@ -80,20 +80,54 @@ All four steps done. Pipeline is end-to-end: Capture page → POST → job dispa
 
 ---
 
-## 🔜 Post-MVP (in priority order)
+## ✅ Post-MVP — Completed this session
 
-1. **Interact mode reply** — `ProcessCaptureJob` returns a reply string that never reaches
-   the frontend. Add `ReplyEvent` broadcasting on `capture.{sessionId}` and wire
-   `Capture.vue` to show it when `listenMode = false`. This completes the second mode.
+- [x] **Interact mode reply** — `app/Events/ReplyEvent.php` broadcasts on `capture.{sessionId}`.
+  `ProcessCaptureJob` fires it after `done` when `!listenMode && reply !== ''`.
+  `Capture.vue` listens for `.ReplyEvent` and renders the reply bubble below the pipeline
+  status bar. `replyText` resets on each new submit.
 
-2. **`search()` faded-node exclusion** — Both services return faded nodes in context.
+- [x] **Entity deduplication — prompt layer** — `ExtractionService` context block reformatted
+  from a verbose JSON blob to a compact `id | label | type` list per node.
+  Rule 2 now explicitly requires reusing the exact existing `id` when an entity matches
+  a context node (e.g. "Dustin" and "Dustin Woodard").
+
+- [x] **Entity deduplication — pipeline layer** — `IntentValidatorService` gains a
+  `deduplicateByLabel()` pre-pass (Rule 0). Before intent validation it calls
+  `GraphServiceInterface::findByLabel()` for every incoming CREATE node. On a label
+  collision it remaps the new id to the existing id throughout nodes/edges/intents and
+  drops the duplicate node, letting the existing CREATE → REINFORCE rule finish the job.
+  `findByLabel()` added to the interface, `GraphService` (Cypher: `toLower(trim(n.label))`),
+  and `GraphServiceStub`.
+
+- [x] **Duplicate node cleanup** — `person_dustin` APOC-merged into `dustin` via tinker.
+
+- [x] **Open relationship types** — `GraphEdgeDraft::$type` and `GraphEdge::$type` changed
+  from `RelationType` enum to `string`. Both `mergeEdge` implementations sanitize with
+  `preg_replace('/[^A-Z_]/', '_', strtoupper(...))` before embedding in Cypher (injection
+  safety). Schema drops `->enum()` on edge type. Prompt updated: predefined types are
+  preferred; the AI may invent SCREAMING_SNAKE_CASE types when none fit.
+
+---
+
+## 🔜 Next Steps (in priority order)
+
+1. **`search()` faded-node exclusion** — Both services return faded nodes in context.
    Add `WHERE n.faded = false OR n.faded IS NULL` to Cypher and filter in the stub.
    Completes the `DecayConfidenceJob` spec.
 
-3. **PWA config** — `manifest.json`, service worker, offline IndexedDB queue.
+2. **Capture.vue — multi-root Vue warning** — The template renders a fragment (multiple
+   root nodes), causing a `Extraneous non-props attributes` warning flood in the browser
+   console. Wrap the template in a single `<div>` or `<Fragment>`.
+
+3. **Graph viewer page** — A read-only view of the user's graph (nodes + edges). Minimum
+   viable: a list/table of nodes with label, type, confidence, and mention count. Useful
+   for verifying the pipeline is working correctly during development.
+
+4. **PWA config** — `manifest.json`, service worker, offline IndexedDB queue.
    Build after smoke test confirms the pipeline is stable.
 
-4. **Auth hardening** — Sanctum personal access token endpoint for mobile/PWA clients
+5. **Auth hardening** — Sanctum personal access token endpoint for mobile/PWA clients
    that can't use session cookies. Not needed until deploying beyond localhost.
 
 ---

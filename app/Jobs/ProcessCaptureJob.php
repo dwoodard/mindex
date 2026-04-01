@@ -10,6 +10,7 @@ use App\Enums\WriteIntent;
 use App\Events\ConflictDetectedEvent;
 use App\Events\GraphUpdatedEvent;
 use App\Events\PipelineStatusEvent;
+use App\Events\ReplyEvent;
 use App\Services\Contracts\GraphServiceInterface;
 use App\Services\ExtractionService;
 use App\Services\IntentValidatorService;
@@ -86,6 +87,10 @@ class ProcessCaptureJob implements ShouldQueue
         ));
 
         $this->broadcastConflicts($graph, $validatedPayload);
+
+        if (! $this->listenMode && $validatedPayload->payload->reply !== '') {
+            broadcast(new ReplyEvent($this->sessionId, $validatedPayload->payload->reply));
+        }
 
         return $validatedPayload->payload->reply;
     }

@@ -21,6 +21,12 @@ interface GraphUpdatedPayload {
     timestamp: string;
 }
 
+interface ReplyPayload {
+    session_id: string;
+    reply: string;
+    timestamp: string;
+}
+
 const page = usePage();
 const userId = computed(() => (page.props.auth as { user: { id: number } })?.user?.id);
 const currentTeam = computed(() => page.props.currentTeam as Team | null);
@@ -44,6 +50,7 @@ const textInput = ref('');
 const sessionId = ref<string | null>(null);
 const pipelineStatus = ref<string | null>(null);
 const lastGraphUpdate = ref<{ nodesAdded: number; edgesAdded: number } | null>(null);
+const replyText = ref<string | null>(null);
 
 // Audio recording
 const isRecording = ref(false);
@@ -61,6 +68,9 @@ function subscribeToSession(id: string) {
         .private(`capture.${id}`)
         .listen('.PipelineStatusEvent', (payload: PipelinePayload) => {
             pipelineStatus.value = payload.status;
+        })
+        .listen('.ReplyEvent', (payload: ReplyPayload) => {
+            replyText.value = payload.reply;
         });
 }
 
@@ -98,6 +108,7 @@ function submitText() {
 
     pipelineStatus.value = null;
     lastGraphUpdate.value = null;
+    replyText.value = null;
     textHttp.input = trimmed;
     textHttp.listen_mode = listenMode.value;
 
@@ -156,6 +167,7 @@ function stopRecording() {
 async function submitAudio(blob: Blob) {
     pipelineStatus.value = 'transcribing';
     lastGraphUpdate.value = null;
+    replyText.value = null;
 
     const formData = new FormData();
     formData.append('audio', blob, 'capture.webm');
@@ -343,6 +355,24 @@ const isProcessing = computed(
                 />
             </div>
         </div>
+
+        <!-- Interact mode reply -->
+        <transition
+            enter-active-class="transition-all duration-500 ease-out"
+            enter-from-class="opacity-0 translate-y-2"
+            enter-to-class="opacity-100 translate-y-0"
+            leave-active-class="transition-all duration-300 ease-in"
+            leave-from-class="opacity-100 translate-y-0"
+            leave-to-class="opacity-0 translate-y-2"
+        >
+            <div
+                v-if="!listenMode && replyText"
+                class="w-full max-w-xl rounded-xl border border-border bg-background p-4 text-sm text-foreground"
+            >
+                <p class="mb-1.5 text-xs font-medium text-muted-foreground">Mindex</p>
+                <p class="whitespace-pre-wrap leading-relaxed">{{ replyText }}</p>
+            </div>
+        </transition>
 
         <!-- Graph update toast -->
         <transition

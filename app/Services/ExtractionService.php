@@ -8,7 +8,6 @@ use App\DTOs\IntentDeclaration;
 use App\DTOs\WritePayload;
 use App\Enums\NodeType;
 use App\Enums\Origin;
-use App\Enums\RelationType;
 use App\Enums\WriteIntent;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
 use Illuminate\JsonSchema\Types\Type;
@@ -31,7 +30,10 @@ class ExtractionService
     {
         $retrievedContext = empty($relatedNodes)
             ? 'No existing nodes retrieved for this input.'
-            : json_encode($relatedNodes, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE);
+            : implode("\n", array_map(
+                fn ($node) => "- id: {$node->id} | label: {$node->label} | type: {$node->type->value}",
+                $relatedNodes,
+            ));
 
         $agent = new ExtractionAgent($retrievedContext, $listenMode);
 
@@ -87,7 +89,7 @@ class ExtractionService
         return new GraphEdgeDraft(
             source_id: $data['source_id'],
             target_id: $data['target_id'],
-            type: RelationType::from($data['type']),
+            type: $data['type'],
             origin: Origin::from($data['origin']),
             strength: (float) $data['strength'],
             reason: $data['reason'] ?? null,
@@ -147,9 +149,9 @@ to this input). Use this context to:
 
 RULES:
 1. Extract 2–5 nodes per turn. Do not over-extract. Quality over quantity.
-2. Node ids must be stable snake_case. Same concept = same id every time.
+2. ALWAYS check the EXISTING GRAPH CONTEXT first. If an entity in the input is clearly the same person, place, idea, or concept as an existing node — even under a different name or phrasing (e.g. "Dustin" and "Dustin Woodard") — you MUST use that node's exact existing `id`. Never generate a new id for an entity that already exists in the context.
 3. Node types must come from: Person, Idea, Project, Belief, Question, Preference, Dislike, Event, Place, Resource
-4. Relationship types must come from: ORIGINATED, SUGGESTED, REJECTED, EVOLVED_INTO, CONTRADICTED_BY, REINFORCES, RELATES_TO, BLOCKS, ENABLES, HAS_QUESTION, PREFERS, HAS_AVERSION_TO, WORKS_WITH, BUILT_ON, MENTIONS
+4. Prefer these relationship types: ORIGINATED, SUGGESTED, REJECTED, EVOLVED_INTO, CONTRADICTED_BY, REINFORCES, RELATES_TO, BLOCKS, ENABLES, HAS_QUESTION, PREFERS, HAS_AVERSION_TO, WORKS_WITH, BUILT_ON, MENTIONS. If none fit, invent a new type in SCREAMING_SNAKE_CASE (e.g. FUNDED_BY, INSPIRED_BY).
 5. Declare your WriteIntent for each node: CREATE, REINFORCE, UPDATE, EVOLVE, CONTRADICT, or RESOLVE
 6. Origin must be accurate: 'user' if they said it, 'inferred' if you derived it.
 7. {$listenNote}
@@ -174,7 +176,7 @@ You MUST respond with a single JSON object matching this exact shape. No other t
   "open_questions": null
 }
 
-EXISTING GRAPH CONTEXT:
+EXISTING GRAPH CONTEXT (reuse these exact ids if the entity matches):
 {$this->retrievedNodesJson}
 SYSTEM;
     }
@@ -199,7 +201,6 @@ SYSTEM;
     public function schema(JsonSchema $schema): array
     {
         $nodeTypeValues = array_column(NodeType::cases(), 'value');
-        $relationTypeValues = array_column(RelationType::cases(), 'value');
         $writeIntentValues = array_column(WriteIntent::cases(), 'value');
         $originValues = array_column(Origin::cases(), 'value');
 
@@ -217,7 +218,7 @@ SYSTEM;
         $edgeSchema = $schema->object([
             'source_id' => $schema->string()->required(),
             'target_id' => $schema->string()->required(),
-            'type' => $schema->string()->enum($relationTypeValues)->required(),
+            'type' => $schema->string()->required(),
             'origin' => $schema->string()->enum($originValues)->required(),
             'strength' => $schema->number()->required(),
             'reason' => $schema->string()->nullable(),

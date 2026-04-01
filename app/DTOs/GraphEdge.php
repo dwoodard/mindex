@@ -3,7 +3,6 @@
 namespace App\DTOs;
 
 use App\Enums\Origin;
-use App\Enums\RelationType;
 use Carbon\Carbon;
 
 readonly class GraphEdge
@@ -12,7 +11,7 @@ readonly class GraphEdge
         public string $id,
         public string $source_id,
         public string $target_id,
-        public RelationType $type,
+        public string $type,
         public Origin $origin,
         public float $strength,
         public Carbon $created_at,

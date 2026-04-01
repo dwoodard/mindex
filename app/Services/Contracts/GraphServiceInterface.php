@@ -12,6 +12,8 @@ interface GraphServiceInterface
 {
     public function findById(string $id): ?GraphNode;
 
+    public function findByLabel(string $label): ?GraphNode;
+
     /** @return GraphNode[] */
     public function findByIds(array $ids): array;
 

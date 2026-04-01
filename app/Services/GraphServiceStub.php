@@ -8,7 +8,6 @@ use App\DTOs\GraphNode;
 use App\DTOs\GraphNodeDraft;
 use App\Enums\NodeType;
 use App\Enums\Origin;
-use App\Enums\RelationType;
 use App\Services\Contracts\GraphServiceInterface;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\Storage;
@@ -26,6 +25,20 @@ class GraphServiceStub implements GraphServiceInterface
         }
 
         return $this->hydrateNode($store['nodes'][$id]);
+    }
+
+    public function findByLabel(string $label): ?GraphNode
+    {
+        $store = $this->readStore();
+        $normalised = mb_strtolower(trim($label));
+
+        foreach ($store['nodes'] as $data) {
+            if (mb_strtolower(trim($data['label'] ?? '')) === $normalised) {
+                return $this->hydrateNode($data);
+            }
+        }
+
+        return null;
     }
 
     /** @return GraphNode[] */
@@ -114,7 +127,8 @@ class GraphServiceStub implements GraphServiceInterface
         $store = $this->readStore();
         $now = Carbon::now()->toIso8601String();
 
-        $edgeId = "{$draft->source_id}__{$draft->type->value}__{$draft->target_id}";
+        $relType = preg_replace('/[^A-Z_]/', '_', strtoupper(trim($draft->type)));
+        $edgeId = "{$draft->source_id}__{$relType}__{$draft->target_id}";
 
         $existing = $store['edges'][$edgeId] ?? null;
 
@@ -122,7 +136,7 @@ class GraphServiceStub implements GraphServiceInterface
             'id' => $edgeId,
             'source_id' => $draft->source_id,
             'target_id' => $draft->target_id,
-            'type' => $draft->type->value,
+            'type' => $relType,
             'origin' => $draft->origin->value,
             'strength' => $draft->strength,
             'reason' => $draft->reason,
@@ -282,7 +296,7 @@ class GraphServiceStub implements GraphServiceInterface
             id: $raw['id'],
             source_id: $raw['source_id'],
             target_id: $raw['target_id'],
-            type: RelationType::from($raw['type']),
+            type: $raw['type'],
             origin: Origin::from($raw['origin']),
             strength: (float) $raw['strength'],
             created_at: Carbon::parse($raw['created_at']),

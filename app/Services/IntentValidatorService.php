@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\DTOs\GraphEdgeDraft;
 use App\DTOs\IntentDeclaration;
 use App\DTOs\ValidatedPayload;
 use App\DTOs\WritePayload;
@@ -25,6 +26,8 @@ class IntentValidatorService
 
     public function validate(WritePayload $payload): ValidatedPayload
     {
+        $payload = $this->deduplicateByLabel($payload);
+
         $warnings = [];
         $flaggedContradictions = [];
 
@@ -70,6 +73,80 @@ class IntentValidatorService
             payload: $correctedPayload,
             flaggedContradictions: $flaggedContradictions,
             warnings: $warnings,
+        );
+    }
+
+    /**
+     * Rule 0 — Label deduplication.
+     *
+     * Detects when the AI assigned a new id to an entity that already exists under
+     * a different id but the same label (case-insensitive). Remaps the new id to the
+     * existing id throughout nodes, edges, and intents so the downstream CREATE →
+     * REINFORCE rule handles it cleanly without writing a duplicate node.
+     */
+    private function deduplicateByLabel(WritePayload $payload): WritePayload
+    {
+        // Build a map of newId → existingId for any label collision.
+        $remapping = [];
+
+        foreach ($payload->nodes as $node) {
+            $existing = $this->graphService->findByLabel($node->label);
+
+            if ($existing !== null && $existing->id !== $node->id) {
+                $remapping[$node->id] = $existing->id;
+
+                Log::warning(
+                    sprintf(
+                        'Dedup: node "%s" (label "%s") remapped to existing id "%s".',
+                        $node->id,
+                        $node->label,
+                        $existing->id,
+                    ),
+                    ['new_id' => $node->id, 'existing_id' => $existing->id],
+                );
+            }
+        }
+
+        if (empty($remapping)) {
+            return $payload;
+        }
+
+        $remap = fn (string $id): string => $remapping[$id] ?? $id;
+
+        // Remove remapped nodes (the existing node stays; the duplicate is dropped).
+        $nodes = array_values(
+            array_filter($payload->nodes, fn ($n) => ! isset($remapping[$n->id])),
+        );
+
+        $edges = array_map(
+            fn ($e) => new GraphEdgeDraft(
+                source_id: $remap($e->source_id),
+                target_id: $remap($e->target_id),
+                type: $e->type,
+                origin: $e->origin,
+                strength: $e->strength,
+                reason: $e->reason,
+            ),
+            $payload->edges,
+        );
+
+        $intents = array_map(
+            fn ($i) => new IntentDeclaration(
+                node_id: $remap($i->node_id),
+                intent: $i->intent,
+                replaces_id: $i->replaces_id !== null ? $remap($i->replaces_id) : null,
+                reason: $i->reason,
+            ),
+            $payload->intents,
+        );
+
+        return new WritePayload(
+            nodes: $nodes,
+            edges: $edges,
+            intents: $intents,
+            reply: $payload->reply,
+            mood: $payload->mood,
+            open_questions: $payload->open_questions,
         );
     }
 
