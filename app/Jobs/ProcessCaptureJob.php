@@ -11,6 +11,7 @@ use App\Events\ConflictDetectedEvent;
 use App\Events\GraphUpdatedEvent;
 use App\Events\PipelineStatusEvent;
 use App\Events\ReplyEvent;
+use App\Models\User;
 use App\Services\Contracts\GraphServiceInterface;
 use App\Services\ExtractionService;
 use App\Services\IntentValidatorService;
@@ -61,7 +62,14 @@ class ProcessCaptureJob implements ShouldQueue
 
         $relatedNodes = $graph->search($normalised, limit: 5);
 
-        $writePayload = $extractor->extract($normalised, $relatedNodes, $this->listenMode);
+        $user = User::findOrFail($this->userId);
+        $speakerNode = $graph->findByLabel($user->name);
+        $speakerContext = [
+            'name' => $user->name,
+            'graph_id' => $speakerNode?->id,
+        ];
+
+        $writePayload = $extractor->extract($normalised, $relatedNodes, $this->listenMode, $speakerContext);
 
         // --- Validate ---
         broadcast(new PipelineStatusEvent($this->sessionId, 'validating'));

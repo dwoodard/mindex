@@ -25,8 +25,9 @@ class ExtractionService
      * Extract structured graph data from raw user input and related graph context.
      *
      * @param  array<int, mixed>  $relatedNodes
+     * @param  array{name: string, graph_id: string|null}  $speakerContext
      */
-    public function extract(string $input, array $relatedNodes, bool $listenMode = true): WritePayload
+    public function extract(string $input, array $relatedNodes, bool $listenMode = true, array $speakerContext = []): WritePayload
     {
         $retrievedContext = empty($relatedNodes)
             ? 'No existing nodes retrieved for this input.'
@@ -35,7 +36,7 @@ class ExtractionService
                 $relatedNodes,
             ));
 
-        $agent = new ExtractionAgent($retrievedContext, $listenMode);
+        $agent = new ExtractionAgent($retrievedContext, $listenMode, $speakerContext);
 
         /** @var StructuredAgentResponse $response */
         $response = $agent->prompt($input);
@@ -124,9 +125,13 @@ class ExtractionAgent implements Agent, Conversational, HasStructuredOutput
 {
     use Promptable;
 
+    /**
+     * @param  array{name: string, graph_id: string|null}  $speakerContext
+     */
     public function __construct(
         private readonly string $retrievedNodesJson,
         private readonly bool $listenMode = true,
+        private readonly array $speakerContext = [],
     ) {}
 
     public function instructions(): string
@@ -135,8 +140,29 @@ class ExtractionAgent implements Agent, Conversational, HasStructuredOutput
             ? 'This is listen mode. Leave the reply field as an empty string.'
             : 'You may include a brief conversational reply in the reply field.';
 
+        $speakerBlock = '';
+        if (! empty($this->speakerContext['name'])) {
+            $name = $this->speakerContext['name'];
+            $graphId = $this->speakerContext['graph_id'] ?? null;
+            $idLine = $graphId
+                ? "Graph node id: {$graphId} — use this exact id whenever referencing the speaker as a node."
+                : 'No graph node found yet — create one with a stable snake_case id derived from their name.';
+
+            $speakerBlock = <<<SPEAKER
+
+THE SPEAKER:
+Name: {$name}
+{$idLine}
+When the user says "I", "me", "my", "I am", "I believe", "I prefer", "I like", "I dislike" — they are referring to this person.
+Always attribute edges that originate from the speaker (ORIGINATED, PREFERS, HAS_AVERSION_TO, etc.) to their node.
+Set origin to "user" for everything the speaker directly states.
+
+SPEAKER;
+        }
+
         return <<<SYSTEM
 You are a personal intelligence extraction engine embedded in a knowledge graph system.
+{$speakerBlock}
 
 Your job is to read what the user said and extract structured graph data from it.
 
