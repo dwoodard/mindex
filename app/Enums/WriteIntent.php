@@ -2,13 +2,12 @@
 
 namespace App\Enums;
 
-class WriteIntent
+enum WriteIntent: string
 {
-    /**
-     * Create a new class instance.
-     */
-    public function __construct()
-    {
-        //
-    }
+    case Create = 'CREATE';
+    case Reinforce = 'REINFORCE';
+    case Update = 'UPDATE';
+    case Evolve = 'EVOLVE';
+    case Contradict = 'CONTRADICT';
+    case Resolve = 'RESOLVE';
 }

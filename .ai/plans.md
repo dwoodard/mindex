@@ -5,6 +5,117 @@ Paste into Cursor, Claude Code, or hand to a developer as the source of truth.
 
 ---
 
+## ✅ Done
+
+### Infrastructure
+
+- [x] Neo4j running in Docker (`docker-compose.yml`) — port 7474 (browser) + 7687 (bolt), password `neo4jtest`
+- [x] Laravel Reverb running in Docker — port 8080, custom PHP 8.4 image with `pcntl` extension
+- [x] Demo seed data loaded into Neo4j (`database/neo4j/demo.cypher`)
+
+### Packages Installed
+
+- [x] `laravel/ai` — first-party Laravel AI SDK
+- [x] `laudis/neo4j-php-client` v3.4 — Neo4j Bolt driver
+- [x] `laravel/horizon` v5.45 — queue dashboard, published + configured
+
+### Schema Foundation
+
+- [x] `app/Enums/NodeType.php` — 10 node types (Person, Idea, Project, Belief, Question, Preference, Dislike, Event, Place, Resource)
+- [x] `app/Enums/RelationType.php` — 15 relationship types
+- [x] `app/Enums/WriteIntent.php` — 6 write intents (Create, Reinforce, Update, Evolve, Contradict, Resolve)
+- [x] `app/Enums/Origin.php` — 4 origins (User, Claude, Inferred, System)
+- [x] `app/DTOs/GraphNode.php` — persisted node (readonly)
+- [x] `app/DTOs/GraphEdge.php` — persisted edge (readonly)
+- [x] `app/DTOs/GraphNodeDraft.php` — AI output node before validation (readonly)
+- [x] `app/DTOs/GraphEdgeDraft.php` — AI output edge before validation (readonly)
+- [x] `app/DTOs/IntentDeclaration.php` — per-node intent declaration from AI (readonly)
+- [x] `app/DTOs/WritePayload.php` — full AI response envelope (readonly)
+
+---
+
+## 🔨 In Progress
+
+Being built right now by parallel agents:
+
+1. **`GraphServiceInterface`** (`app/Services/Contracts/GraphServiceInterface.php`)
+   Define the contract first so the stub and real implementation are interchangeable.
+
+2. **`GraphServiceStub`** (`app/Services/GraphServiceStub.php`)
+   JSON file store implementation — lets the full pipeline be built and tested before Neo4j is wired up.
+
+3. **`ExtractionService`** (`app/Services/ExtractionService.php`)
+   The `laravel/ai` structured output call. Returns a `WritePayload`. Includes the system prompt with enum vocabularies and retrieved graph context.
+   > ⚠️ Verify whether `laravel/ai` supports schema-enforced structured output before building. If not, fall back to `prism-php/prism`.
+
+4. **`IntentValidatorService`** (`app/Services/IntentValidatorService.php`)
+   Laravel's last line of defence. Validates/overrides AI intent against existing graph state before any write.
+   Also creates: **`ValidatedPayload` DTO** (`app/DTOs/ValidatedPayload.php`) — output of the validator, passed to the write step.
+
+5. **Reverb Events** (`app/Events/`)
+   - `PipelineStatusEvent` — transcribing | extracting | done
+   - `GraphUpdatedEvent` — nodes/edges added this turn
+   - `ConflictDetectedEvent` — CONTRADICT intent detected
+   Build these before any frontend work so the UI is wired for real-time from day one.
+
+---
+
+## 🔜 Up Next
+
+After the current batch lands, build in this order — each step unblocks the next:
+
+1. **`ProcessCaptureJob`** (`app/Jobs/ProcessCaptureJob.php`)
+   Wires the full pipeline together. Steps in order:
+   - Normalise input to UTF-8 string
+   - Retrieve related nodes from graph (via `GraphServiceInterface`)
+   - Build extraction prompt with retrieved context
+   - Call `ExtractionService` → get `WritePayload`
+   - Call `IntentValidatorService` → get `ValidatedPayload`
+   - Broadcast `PipelineStatusEvent` at each stage
+   - Write nodes/edges via `GraphServiceInterface`
+   - Broadcast `GraphUpdatedEvent` with counts
+   - If contradictions → broadcast `ConflictDetectedEvent`
+   - Return reply (empty in listen mode)
+   Uses `#[Tries(3)]` `#[Backoff(60)]` Laravel 13 job attributes.
+
+2. **`CaptureController`** (`app/Http/Controllers/CaptureController.php`)
+   POST `/api/capture/text` and `/api/capture/audio`. Dispatches `ProcessCaptureJob`.
+   Returns `session_id` so the frontend can subscribe to the correct Reverb channel.
+
+3. **`TranscribeAudioJob`** (`app/Jobs/TranscribeAudioJob.php`)
+   Receives audio file path, calls OpenAI Whisper API. On success dispatches
+   `ProcessCaptureJob` with the transcript. On failure broadcasts `PipelineStatusEvent`
+   with `'failed'` status.
+
+4. **`Capture.vue`** (`resources/js/Pages/Capture.vue`)
+   Main PWA screen. Hold-to-record audio button, text input, mode toggle (Listen/Interact).
+   Wire Reverb listeners from day one for pipeline status and graph updates — do not ship
+   this screen without real-time feedback already connected.
+
+5. **`GraphService`** (real Neo4j) (`app/Services/GraphService.php`)
+   Swap `GraphServiceStub` for full `laudis/neo4j-php-client` implementation.
+   Same `GraphServiceInterface`, different backend — no pipeline changes needed.
+
+6. **`config/graphmind.php`**
+   Config file for Neo4j connection settings, Whisper settings, and decay defaults.
+   Register in `AppServiceProvider` binding `GraphServiceInterface` to `GraphServiceStub`
+   (swap to real `GraphService` once Neo4j is proven stable).
+
+7. **PWA config**
+   `manifest.json`, service worker (cache-first static, network-first API), offline capture
+   queue using IndexedDB + Background Sync. Do not build until the core pipeline is stable.
+
+8. **Auth hardening**
+   All Reverb channels are private and require authenticated sessions.
+   Sanctum API tokens for mobile clients. Add this before any deployment.
+
+9. **`DecayConfidenceJob`** (`app/Jobs/DecayConfidenceJob.php`)
+   Nightly cron at 2am via Laravel Scheduler. For every non-anchored node not reinforced
+   in 7 days: `confidence -= decay_rate`, minimum `0.05`. Nodes below `0.2` flagged as
+   `'faded'` and excluded from retrieval context by default.
+
+---
+
 ## What We Are Building
 
 A **Progressive Web App** (PWA) that acts as a personal intelligence layer.
@@ -123,7 +234,7 @@ enum NodeType: string {
     case Belief     = 'Belief';
     case Question   = 'Question';
     case Preference = 'Preference';
-    case Aversion   = 'Aversion';
+    case Dislike    = 'Dislike';
     case Event      = 'Event';
     case Place      = 'Place';
     case Resource   = 'Resource';

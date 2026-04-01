@@ -2,13 +2,10 @@
 
 namespace App\Enums;
 
-class Origin
+enum Origin: string
 {
-    /**
-     * Create a new class instance.
-     */
-    public function __construct()
-    {
-        //
-    }
+    case User = 'user';
+    case AI = 'ai';
+    case Inferred = 'inferred';
+    case System = 'system';
 }
